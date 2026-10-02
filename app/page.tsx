@@ -48,7 +48,12 @@ export default async function Home() {
       <div className="max-w-3xl mx-auto">
         <header className="mb-8 flex justify-between items-center">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900">FeedbackFlow 🚀</h1>
+            <div className="flex items-center gap-3">
+              <h1 className="text-3xl font-bold text-gray-900">FeedbackFlow 🚀</h1>
+              <span className="bg-purple-100 text-purple-800 text-xs font-semibold px-2.5 py-0.5 rounded border border-purple-200">
+                Beta
+              </span>
+            </div>
             <p className="text-gray-600">Construyendo el producto juntos</p>
           </div>
           <div className="flex flex-col items-end gap-2">

@@ -1,69 +1,115 @@
-import Image from "next/image";
+import { supabase } from '@/lib/supabase'
+import { redis } from '@/lib/redis' // Importamos redis
+import IdeaForm from '@/components/IdeaForm'
+import VoteButton from '@/components/VoteButton'
 
-export default function Home() {
+export const dynamic = 'force-dynamic'
+
+export default async function Home() {
+  const CACHE_KEY = 'ideas_list'
+  
+  // 1. Declaramos las variables globales al principio de la función
+  let ideas: any[] = []
+  let error: any = null // <-- FIX: Ahora 'error' existe en todo el componente
+  let source = 'Redis' 
+
+  // 2. INTENTAMOS LEER DESDE REDIS PRIMERO
+  const cachedIdeas = await redis.get(CACHE_KEY)
+
+  if (cachedIdeas) {
+    ideas = cachedIdeas as any[]
+  } else {
+    // 3. SI NO ESTÁN EN CACHÉ, VAMOS A POSTGRESQL
+    source = 'PostgreSQL'
+    
+    // IMPORTANTE: Ya no usamos 'const' aquí, solo reasignamos las variables globales
+    const result = await supabase
+      .from('ideas')
+      .select(`
+        id, title, description, status, created_at,
+        users ( name ), votes ( id ) 
+      `)
+      .order('created_at', { ascending: false })
+      
+    // Asignamos los resultados a nuestras variables globales
+    if (result.data) {
+      ideas = result.data
+      await redis.set(CACHE_KEY, JSON.stringify(ideas), { ex: 60 })
+    }
+    
+    // Si hubo un error en Supabase, lo guardamos para mostrarlo en el HTML
+    if (result.error) {
+      error = result.error
+    }
+  }
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.tsx
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-gray-50 p-8">
+      <div className="max-w-3xl mx-auto">
+        <header className="mb-8 flex justify-between items-center">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900">FeedbackFlow 🚀</h1>
+            <p className="text-gray-600">Construyendo el producto juntos</p>
+          </div>
+          <div className="flex flex-col items-end gap-2">
+            <a href="/login" className="text-blue-600 hover:underline text-sm font-medium">
+              Login / Registro
+            </a>
+            {/* Un pequeño indicador para saber de dónde vinieron los datos */}
+            <span className={`text-xs px-2 py-1 rounded-full text-white font-bold ${
+              source === 'Redis' ? 'bg-green-500' : 'bg-blue-500'
+            }`}>
+              Datos desde: {source}
+            </span>
+          </div>
+        </header>
+
+        {/* Formulario Cliente */}
+        <IdeaForm />
+
+        {/* Lista de Ideas Renderizada en el Servidor */}
+        <div className="space-y-4">
+          <h2 className="text-xl font-bold text-gray-800 mb-4">Sugerencias Recientes</h2>
+          
+          {error && (
+            <div className="bg-red-50 text-red-600 p-4 rounded">Error cargando ideas: {error.message}</div>
+          )}
+
+          {ideas?.length === 0 && (
+            <p className="text-gray-500 italic text-center py-8">Aún no hay ideas. ¡Sé el primero en proponer una!</p>
+          )}
+
+          {ideas?.map((idea) => (
+            <article key={idea.id} className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex-shrink-0">
+                <VoteButton 
+                  ideaId={idea.id} 
+                  initialCount={idea.votes?.length || 0} 
+                />
+              </div>
+
+              <div className="flex-grow">
+                <div className="flex justify-between items-start mb-2">
+                  <h3 className="text-lg font-semibold text-gray-900">{idea.title}</h3>
+                  <span className="px-2 py-1 text-xs font-medium bg-yellow-100 text-yellow-800 rounded-full">
+                    {idea.status}
+                  </span>
+                </div>
+                <p className="text-gray-600 mb-4 whitespace-pre-wrap">{idea.description}</p>
+                
+                <div className="flex items-center justify-between text-sm text-gray-500">
+                  <span>
+                    Propuesto por: <strong>{(idea.users as any)?.name || 'Usuario Anónimo'}</strong>
+                  </span>
+                  <span>
+                    {new Date(idea.created_at).toLocaleDateString()}
+                  </span>
+                </div>
+              </div>
+            </article>
+          ))}
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
-  );
+      </div>
+    </main>
+  )
 }
